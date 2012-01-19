@@ -45,11 +45,16 @@ class CFileParser(object):
 
     def _setup_data_structure(self):
         """
-        Creates some dictionaries for internal data handling.
+        Create some dictionaries for internal data handling.
         """
-        # Store all externally defines files here, as a tuple of (file,
-        # type_name).
-        self.external_types = []
+        # While traversing through the ast, collect all occuring types and
+        # store them in one central location to later process them.
+        self.type_collection = []
+
+        # Collect all used names, like struct names, union names, enum names,
+        # function names, typedefs and so on to avoid creating duplicate names.
+        self.used_names = []
+
         # Sort all top level cursors in one dictionary which will always
         # contain the cursor object.
         self.unparsed_nodes = {
@@ -61,6 +66,7 @@ class CFileParser(object):
             'macro_definitions': [],
             'unsorted': []
         }
+
         # After they are parsed, store them in another dictionary.
         self.parsed_nodes = {
             'typedefs': [],
@@ -108,64 +114,29 @@ class CFileParser(object):
         Parses all currently unparsed nodes in self.unparsed_nodes.
         """
         self.parse_macro_definition_nodes()
-        self.parse_typedef_nodes()
         self.parse_struct_nodes()
         self.parse_union_nodes()
         self.parse_enum_nodes()
         self.parse_function_prototype_nodes()
 
+        # Figure out the already given names. Typedefs cannot use these again.
+        # Mainly just important for e.g.
+        #   struct Example;
+        #   typedef struct Example Example;
+        # which maps (in Cython) to
+        #   cdef struct Example:
+        #       pass
+        # Therefore the typedef will be omitted in this case because it is not
+        # needed (nor possible to assign) in Cython.
+        self.type_names = []
+        node_types = ['structs', 'unions', 'enums']
+        for node_name in node_types:
+            nodes = self.parsed_nodes[node_name]
+            for node in nodes:
+                self.type_names.append(node.node_name)
 
-        # XXX: Workaround! This should all be done during Node initialization.
-        # for node in self.parsed_nodes['macro_definitions']:
-        #     try:
-        #         node.get_cython_string()
-        #     except NotImplementedError:
-        #         pass
-        # for node in self.parsed_nodes['typedefs']:
-        #     try:
-        #         node.get_C_string()
-        #     except NotImplementedError:
-        #         pass
-        #     try:
-        #         node.get_cython_string()
-        #     except NotImplementedError:
-        #         pass
-        # for node in self.parsed_nodes['structs']:
-        #     try:
-        #         node.get_C_string()
-        #     except NotImplementedError:
-        #         pass
-        #     try:
-        #         node.get_cython_string()
-        #     except NotImplementedError:
-        #         pass
-        # for node in self.parsed_nodes['unions']:
-        #     try:
-        #         node.get_C_string()
-        #     except NotImplementedError:
-        #         pass
-        #     try:
-        #         node.get_cython_string()
-        #     except NotImplementedError:
-        #         pass
-        # for node in self.parsed_nodes['enums']:
-        #     try:
-        #         node.get_C_string()
-        #     except NotImplementedError:
-        #         pass
-        #     try:
-        #         node.get_cython_string()
-        #     except NotImplementedError:
-        #         pass
-        # for node in self.parsed_nodes['functionprotos']:
-        #     try:
-        #         node.get_C_string()
-        #     except NotImplementedError:
-        #         pass
-        #     try:
-        #         node.get_cython_string()
-        #     except NotImplementedError:
-        #         pass
+        # Typedef nodes need to be parsed at the end.
+        self.parse_typedef_nodes()
 
 
     def parse_macro_definition_nodes(self):
@@ -179,68 +150,21 @@ class CFileParser(object):
                 self.parsed_nodes['macro_definitions'].append(macro_node)
 
     def parse_typedef_nodes(self):
-        self.already_parsed_types = []
         for t_node in self.unparsed_nodes['typedefs']:
             node = TypedefNode(t_node, parser=self)
             self.parsed_nodes['typedefs'].append(node)
-            if node.pretty_original_type is None and not node.is_typecast:
-                self.already_parsed_types.append(node.original_type)
 
     def parse_struct_nodes(self):
-        # Filter all already parsed nodes.
-        truly_unparsed_nodes = []
-        if self.already_parsed_types:
-            for node in self.unparsed_nodes['structs']:
-                node_already_parsed = False
-                for other_node in self.already_parsed_types:
-                    if bool(node == other_node) or \
-                       bool(node == \
-                            other_node.type.get_canonical().get_declaration()):
-                        node_already_parsed = True
-                        break
-                if node_already_parsed:
-                    continue
-                truly_unparsed_nodes.append(node)
-        else:
-            truly_unparsed_nodes = self.unparsed_nodes['structs']
-        for struct_node in truly_unparsed_nodes:
+        for struct_node in self.unparsed_nodes['structs']:
             self.parsed_nodes['structs'].append(StructNode(struct_node, parser=self))
 
     def parse_union_nodes(self):
-        # Filter all already parsed nodes.
-        truly_unparsed_nodes = []
-        if self.already_parsed_types:
-            for node in self.unparsed_nodes['unions']:
-                node_already_parsed = False
-                for other_node in self.already_parsed_types:
-                    if bool(node == other_node):
-                        node_already_parsed = True
-                        break
-                if node_already_parsed:
-                    continue
-                truly_unparsed_nodes.append(node)
-        else:
-            truly_unparsed_nodes = self.unparsed_nodes['unions']
-        for union_node in truly_unparsed_nodes:
+        for union_node in self.unparsed_nodes['unions']:
             self.parsed_nodes['unions'].append(UnionNode(union_node,
                                                          parser=self))
 
     def parse_enum_nodes(self):
-        # Filter all already parsed nodes.
-        truly_unparsed_nodes = []
-        if self.already_parsed_types:
-            for node in self.unparsed_nodes['enums']:
-                node_already_parsed = False
-                for other_node in self.already_parsed_types:
-                    if bool(node == other_node):
-                        node_already_parsed = True
-                        break
-                if node_already_parsed:
-                    continue
-                truly_unparsed_nodes.append(node)
-        else:
-            truly_unparsed_nodes = self.unparsed_nodes['enums']
-        for enum_node in truly_unparsed_nodes:
+        for enum_node in self.unparsed_nodes['enums']:
             self.parsed_nodes['enums'].append(EnumNode(enum_node, parser=self))
 
     def parse_function_prototype_nodes(self):
@@ -249,6 +173,7 @@ class CFileParser(object):
                 FunctionProtoNode(proto, parser=self))
 
     def parse_external_types(self):
+        return
         external_types = {}
         # Sort by origin file
         for e_type in self.external_types:
@@ -268,6 +193,7 @@ class CFileParser(object):
         self.external_types = external_types
 
     def render_external_types(self, file_object):
+        return
         files = self.external_types.keys()
         for ext_file in files:
             filename = os.path.basename(ext_file)
@@ -277,15 +203,25 @@ class CFileParser(object):
                                                           typedef[1]))
             file_object.write('\n')
 
-    def render_cython_header(self, filename):
-        with open(filename, 'w') as file_object:
-            self.render_external_types(file_object)
-            node_names = ['macro_definitions', 'typedefs', 'structs',
-                           'unions', 'enums', 'functionprotos']
-            for name in node_names:
-                file_object.write('#' + 78 * '=' + '\n')
-                file_object.write('# %s\n' % name.upper())
-                for node in self.parsed_nodes[name]:
-                    file_object.write(node.get_cython_string())
-                    file_object.write('\n')
-                file_object.write('\n\n\n')
+    def render_cython_header(self, filename_or_object):
+        if isinstance(filename_or_object, basestring):
+            with open(filename_or_object, 'r') as file_object:
+                self._render_cython_header(file_object)
+            return
+        self._render_cython_header(filename_or_object)
+
+    def render_cython_header(self, file_object):
+        self.render_external_types(file_object)
+        node_names = ['macro_definitions', 'enums', 'structs', 'unions',
+                      'typedefs', 'functionprotos']
+        for name in node_names:
+            if len(self.parsed_nodes[name]) == 0:
+                continue
+            # file_object.write('#' + 78 * '=' + '\n')
+            # file_object.write('# %s\n' % name.upper())
+            for node in self.parsed_nodes[name]:
+                if name == 'typedefs' and node.node_name in self.type_names:
+                    continue
+                file_object.write(node.get_cython_string())
+                file_object.write('\n')
+            file_object.write('\n')
