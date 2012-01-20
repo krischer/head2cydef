@@ -40,6 +40,12 @@ class CFileParser(object):
         self._setup_data_structure()
         self._sort_toplevel_nodes()
         self.parse_all_nodes()
+        # Parse the external types 10 times. This is an arbitrary level but
+        # external types might refer to types that are defined elsewhere.
+        # Running this 10 times will allow the parser to go 10 levels deep
+        # which should be enough in most cases.
+        # for _ in xrange(10):
+        #     self.parse_external_types()
         self.parse_external_types()
 
 
@@ -173,45 +179,63 @@ class CFileParser(object):
                 FunctionProtoNode(proto, parser=self))
 
     def parse_external_types(self):
-        return
-        external_types = {}
+        self.sorted_external_types = {}
         # Sort by origin file
-        for e_type in self.external_types:
-            if e_type[0] not in external_types:
-                external_types[e_type[0]] = []
-            external_types[e_type[0]].append((e_type[2], e_type[1]))
-        # Unique.
-        keys = external_types.keys()
-        for key in keys:
-            cur_file = external_types[key]
-            temp = []
-            cur_file = set(cur_file)
-            for _i in cur_file:
-                temp.append(_i)
-            external_types[key] = temp
-
-        self.external_types = external_types
+        for e_type in self.type_collection:
+            e_type = e_type.get_declaration()
+            # Do not consider files that are part of the library and parsed
+            # anyway.
+            if e_type.location.file is None:
+                continue
+            filepath = os.path.abspath(e_type.location.file.name)
+            if filepath in self.files_to_parse:
+                continue
+            if filepath not in self.sorted_external_types:
+                self.sorted_external_types[filepath] = []
+            if e_type not in self.sorted_external_types[filepath]:
+                self.sorted_external_types[filepath].append(e_type)
 
     def render_external_types(self, file_object):
-        return
-        files = self.external_types.keys()
-        for ext_file in files:
-            filename = os.path.basename(ext_file)
-            file_object.write('cdef extern from "%s":\n' % filename)
-            for typedef in self.external_types[ext_file]:
-                file_object.write('%sctypedef %s %s\n' % (TAB, typedef[0],
-                                                          typedef[1]))
+        for key, value in self.sorted_external_types.iteritems():
+            filename = os.path.basename(key)
+            file_object.write('cdef extern from "%s" nogil:\n' % filename)
+            # XXX: Currently only works with typedef nodes, but I think that
+            # covers most uses. Will raise a more or less meaningful error if
+            # an unexpected node arrives.
+            for node in value:
+                node = TypedefNode(node, self, use_canonical_type=True)
+                # It oftentimes a typedef to a struct or a union. This needs to
+                # be handled.
+                # XXX: Also handle other types.
+                if node.original_type.kind == TypeKind.RECORD:
+                    org_decl = node.original_type.get_declaration()
+                    if org_decl.kind == CursorKind.STRUCT_DECL:
+                        org_name = 'struct'
+                    elif org_decl.kind == CursorKind.UNION_DECL:
+                        org_name = 'union'
+                    elif org_decl.kind == CursorKind.ENUM_DECL:
+                        org_name = 'enum'
+                    else:
+                        raise NotImplementedError
+                    file_object.write('%scdef %s %s:\n%s%spass\n' % \
+                        (TAB, org_name, org_decl.spelling, TAB, TAB))
+                # Write the actual typedef.
+                file_object.write('%s%s\n' % (TAB, node.get_cython_string()))
+            # Write one empty line at the end.
             file_object.write('\n')
 
     def render_cython_header(self, filename_or_object):
         if isinstance(filename_or_object, basestring):
-            with open(filename_or_object, 'r') as file_object:
+            with open(filename_or_object, 'w') as file_object:
                 self._render_cython_header(file_object)
             return
         self._render_cython_header(filename_or_object)
 
-    def render_cython_header(self, file_object):
+    def _render_cython_header(self, file_object):
         self.render_external_types(file_object)
+
+        file_object.write('cdef extern from "%s" nogil:\n' % \
+                          os.path.basename(self.filename))
         node_names = ['macro_definitions', 'enums', 'structs', 'unions',
                       'typedefs', 'functionprotos']
         for name in node_names:
@@ -222,6 +246,8 @@ class CFileParser(object):
             for node in self.parsed_nodes[name]:
                 if name == 'typedefs' and node.node_name in self.type_names:
                     continue
-                file_object.write(node.get_cython_string())
+                cython_string = node.get_cython_string().splitlines(True)
+                for line in cython_string:
+                    file_object.write('%s%s' % (TAB, line))
                 file_object.write('\n')
             file_object.write('\n')

@@ -15,10 +15,11 @@ testing_pairs['define_constants'] = (
 #define DO(X) X*X
 """.strip(),
 """
-cdef enum PI:
-    pass
-cdef enum long_macro:
-    pass
+cdef extern from [[[FILENAME]]] nogil:
+    cdef enum PI:
+        pass
+    cdef enum long_macro:
+        pass
 """.strip()
 )
 
@@ -31,9 +32,10 @@ struct testStruct {
 };
 """.strip(),
 """
-cdef struct testStruct:
-    float *member_a
-    int member_b
+cdef extern from [[[FILENAME]]] nogil:
+    cdef struct testStruct:
+        float *member_a
+        int member_b
 """.strip()
 )
 
@@ -46,9 +48,10 @@ union testUnion {
 };
 """.strip(),
 """
-cdef union testUnion:
-    int *a
-    float b
+cdef extern from [[[FILENAME]]] nogil:
+    cdef union testUnion:
+        int *a
+        float b
 """.strip()
 )
 
@@ -64,13 +67,14 @@ typedef newFloat *newFloatPointer;
 typedef newFloat **newFloatDoublePointer;
 """.strip(),
 """
-ctypedef int newInt
-ctypedef float newFloat
-ctypedef newInt newerInt
-ctypedef float *floatPointer
-ctypedef float **floatDoublePointer
-ctypedef newFloat *newFloatPointer
-ctypedef newFloat **newFloatDoublePointer
+cdef extern from [[[FILENAME]]] nogil:
+    ctypedef int newInt
+    ctypedef float newFloat
+    ctypedef newInt newerInt
+    ctypedef float *floatPointer
+    ctypedef float **floatDoublePointer
+    ctypedef newFloat *newFloatPointer
+    ctypedef newFloat **newFloatDoublePointer
 """.strip()
 )
 
@@ -83,10 +87,11 @@ typedef int newInt;
 typedef newInt newIntArray[5];
 """.strip(),
 """
-ctypedef int intArrayFive[5]
-ctypedef int intArrayX[161]
-ctypedef int newInt
-ctypedef newInt newIntArray[5]
+cdef extern from [[[FILENAME]]] nogil:
+    ctypedef int intArrayFive[5]
+    ctypedef int intArrayX[161]
+    ctypedef int newInt
+    ctypedef newInt newIntArray[5]
 """.strip()
 )
 
@@ -99,18 +104,19 @@ typedef struct tnode *Treeptr;
 typedef union tunion *TreePointerUnion;
 """.strip(),
 """
-cdef struct tnode:
-    pass
+cdef extern from [[[FILENAME]]] nogil:
+    cdef struct tnode:
+        pass
 
-cdef union tunion:
-    pass
+    cdef union tunion:
+        pass
 
-ctypedef char c
-ctypedef char *cp
-ctypedef char carr[100]
-ctypedef c *arrayOfSixPointers[6]
-ctypedef tnode *Treeptr
-ctypedef tunion *TreePointerUnion
+    ctypedef char c
+    ctypedef char *cp
+    ctypedef char carr[100]
+    ctypedef c *arrayOfSixPointers[6]
+    ctypedef tnode *Treeptr
+    ctypedef tunion *TreePointerUnion
 """.strip()
 )
 
@@ -121,8 +127,9 @@ struct Dummy_struct;
 typedef struct Dummy_struct Dummy_struct;
 """.strip(),
 """
-cdef struct Dummy_struct:
-    pass
+cdef extern from [[[FILENAME]]] nogil:
+    cdef struct Dummy_struct:
+        pass
 """.strip()
 )
 
@@ -135,11 +142,12 @@ typedef struct {
 } testStruct;
 """.strip(),
 """
-cdef struct Struct_temp_random_[[RANDOMINT]]:
-    float *member_a
-    int member_b
+cdef extern from [[[FILENAME]]] nogil:
+    cdef struct Struct_temp_random_[[RANDOMINT]]:
+        float *member_a
+        int member_b
 
-ctypedef Struct_temp_random_[[RANDOMINT]] testStruct
+    ctypedef Struct_temp_random_[[RANDOMINT]] testStruct
 """.strip()
 )
 
@@ -152,11 +160,12 @@ typedef struct test_struct {
 } testStruct;
 """.strip(),
 """
-cdef struct test_struct:
-    float *member_a
-    int member_b
+cdef extern from [[[FILENAME]]] nogil:
+    cdef struct test_struct:
+        float *member_a
+        int member_b
 
-ctypedef test_struct testStruct
+    ctypedef test_struct testStruct
 """.strip()
 )
 
@@ -169,9 +178,10 @@ typedef struct testStruct {
 } testStruct;
 """.strip(),
 """
-cdef struct testStruct:
-    float *member_a
-    int member_b
+cdef extern from [[[FILENAME]]] nogil:
+    cdef struct testStruct:
+        float *member_a
+        int member_b
 """.strip()
 )
 
@@ -184,11 +194,12 @@ typedef union {
 } testUnion;
 """.strip(),
 """
-cdef union Union_temp_random_[[RANDOMINT]]:
-    float *member_a
-    int member_b
+cdef extern from [[[FILENAME]]] nogil:
+    cdef union Union_temp_random_[[RANDOMINT]]:
+        float *member_a
+        int member_b
 
-ctypedef Union_temp_random_[[RANDOMINT]] testUnion
+    ctypedef Union_temp_random_[[RANDOMINT]] testUnion
 """.strip()
 )
 
@@ -201,11 +212,12 @@ typedef union test_union {
 } testUnion;
 """.strip(),
 """
-cdef union test_union:
-    float *member_a
-    int member_b
+cdef extern from [[[FILENAME]]] nogil:
+    cdef union test_union:
+        float *member_a
+        int member_b
 
-ctypedef test_union testUnion
+    ctypedef test_union testUnion
 """.strip()
 )
 
@@ -218,9 +230,10 @@ typedef union testUnion {
 } testUnion;
 """.strip(),
 """
-cdef union testUnion:
-    float *member_a
-    int member_b
+cdef extern from [[[FILENAME]]] nogil:
+    cdef union testUnion:
+        float *member_a
+        int member_b
 """.strip()
 )
 
@@ -238,14 +251,15 @@ enum week {
 };
 """.strip(),
 """
-cdef enum week:
-    Mon
-    Tue
-    Wen
-    Thu
-    Fri
-    Sat
-    Sun
+cdef extern from [[[FILENAME]]] nogil:
+    cdef enum week:
+        Mon
+        Tue
+        Wen
+        Thu
+        Fri
+        Sat
+        Sun
 """.strip()
 )
 
@@ -258,11 +272,12 @@ typedef enum {
 } testEnum;
 """.strip(),
 """
-cdef enum Enum_temp_random_[[RANDOMINT]]:
-    member_a
-    member_b
+cdef extern from [[[FILENAME]]] nogil:
+    cdef enum Enum_temp_random_[[RANDOMINT]]:
+        member_a
+        member_b
 
-ctypedef Enum_temp_random_[[RANDOMINT]] testEnum
+    ctypedef Enum_temp_random_[[RANDOMINT]] testEnum
 """.strip()
 )
 
@@ -275,11 +290,12 @@ typedef enum test_enum {
 } testEnum;
 """.strip(),
 """
-cdef enum test_enum:
-    member_a
-    member_b
+cdef extern from [[[FILENAME]]] nogil:
+    cdef enum test_enum:
+        member_a
+        member_b
 
-ctypedef test_enum testEnum
+    ctypedef test_enum testEnum
 """.strip()
 )
 
@@ -292,9 +308,10 @@ typedef enum testEnum {
 } testEnum;
 """.strip(),
 """
-cdef enum testEnum:
-    member_a
-    member_b
+cdef extern from [[[FILENAME]]] nogil:
+    cdef enum testEnum:
+        member_a
+        member_b
 """.strip()
 )
 
@@ -332,30 +349,31 @@ union otherUnion {
 };
 """.strip(),
 """
-cdef enum test_enum:
-    member_a
-    member_b
-cdef enum otherEnum:
-    item_one
-    item_two
+cdef extern from [[[FILENAME]]] nogil:
+    cdef enum test_enum:
+        member_a
+        member_b
+    cdef enum otherEnum:
+        item_one
+        item_two
 
-cdef struct test_struct:
-    float *member_a
-    int member_b
-cdef struct otherStruct:
-    int item_one
-    float item_two
+    cdef struct test_struct:
+        float *member_a
+        int member_b
+    cdef struct otherStruct:
+        int item_one
+        float item_two
 
-cdef union test_union:
-    int member_a
-    float member
-cdef union otherUnion:
-    int item_one
-    float item_two
+    cdef union test_union:
+        int member_a
+        float member
+    cdef union otherUnion:
+        int item_one
+        float item_two
 
-ctypedef test_enum testEnum
-ctypedef test_struct testStruct
-ctypedef test_union testUnion
+    ctypedef test_enum testEnum
+    ctypedef test_struct testStruct
+    ctypedef test_union testUnion
 """.strip()
 )
 
@@ -368,10 +386,11 @@ float* mult(float aa, int bb);
 double** dmult(double a, float b);
 """.strip(),
 """
-char** test_method(int *a, double d)
-int add(double ada, float *bda)
-float* mult(float aa, int bb)
-double** dmult(double a, float b)
+cdef extern from [[[FILENAME]]] nogil:
+    char** test_method(int *a, double d)
+    int add(double ada, float *bda)
+    float* mult(float aa, int bb)
+    double** dmult(double a, float b)
 """.strip()
 )
 
@@ -382,9 +401,10 @@ typedef float newFloat;
 newFloat* doStuff(newFloat a, float* b);
 """.strip(),
 """
-ctypedef float newFloat
+cdef extern from [[[FILENAME]]] nogil:
+    ctypedef float newFloat
 
-newFloat* doStuff(newFloat a, float* b)
+    newFloat* doStuff(newFloat a, float *b)
 """.strip()
 )
 
@@ -394,7 +414,8 @@ testing_pairs['typedef_cast'] = (
 typedef float (*func_point)(int param1, void* param2);
 """.strip(),
 """
-ctypedef float (*func_point)(int param1, void* param2)
+cdef extern from [[[FILENAME]]] nogil:
+    ctypedef float (*func_point)(int param1, void* param2)
 """.strip()
 )
 
@@ -407,9 +428,10 @@ struct FPStruct {
 };
 """.strip(),
 """
-cdef struct FPStruct:
-    void (*Function)(float* func_param, int other_param)
-    int other_member
+cdef extern from [[[FILENAME]]] nogil:
+    cdef struct FPStruct:
+        void (*Function)(float* func_param, int other_param)
+        int other_member
 """.strip()
 )
 
@@ -422,7 +444,64 @@ typedef struct TestingStruct
 } TestingStruct;
 """.strip(),
 """
-cdef struct TestingStruct:
-    long (*function_name)(TestingStruct* self_reference, long param_2)
+cdef extern from [[[FILENAME]]] nogil:
+    cdef struct TestingStruct:
+        long (*function_name)(TestingStruct* self_reference, long param_2)
+""".strip()
+)
+
+testing_pairs['simple_external_typedef'] = (
+"""
+#include <stdint.h>
+typedef int8_t Int8;
+""".strip(),
+"""
+cdef extern from "stdint.h" nogil:
+    ctypedef signed char int8_t
+
+cdef extern from [[[FILENAME]]] nogil:
+    ctypedef int8_t Int8
+""".strip()
+)
+
+testing_pairs['void_func_pointer_in_struct'] = (
+"""
+struct SomeStruct {
+    void (*void_func)();
+    const char *const_pointer;
+}
+""".strip(),
+"""
+cdef extern from [[[FILENAME]]] nogil:
+    cdef struct SomeStruct:
+        void (*void_func)()
+        char *const_pointer
+""".strip()
+)
+
+testing_pairs['function_poiner_as_funtion_param'] = (
+"""
+int some_function (int *param_a, void (*function_pointer) (int, void *));
+""".strip(),
+"""
+cdef extern from [[[FILENAME]]] nogil:
+    int some_function(int *param_a, void (*function_pointer)(int, void*))
+""".strip()
+)
+
+testing_pairs['complicated_extern_type'] = (
+"""
+#include <stdio.h>
+
+FILE dummyFunc();
+""".strip(),
+"""
+cdef extern from "stdio.h" nogil:
+    cdef struct __sFILE:
+        pass
+    ctypedef __sFILE FILE
+
+cdef extern from [[[FILENAME]]] nogil:
+    FILE dummyFunc()
 """.strip()
 )

@@ -48,6 +48,11 @@ class HeaderToCythonTestCase(unittest.TestCase):
             output_object.seek(0, 0)
             output = output_object.read().strip()
 
+            # The filename is represented by [[[FILENAME]]] in the testing
+            # constructs. Replace it with the real filename.
+            cython_code = cython_code.replace('[[[FILENAME]]]',
+                              '"%s"' % os.path.basename(self.temp_file))
+
             # Randomly created struct/unions/enums names are possible. These will
             # have the names
             #   Struct_temp_random_[[RANDOMINT]]

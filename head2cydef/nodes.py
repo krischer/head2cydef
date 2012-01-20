@@ -1,4 +1,4 @@
-from clang.cindex import Index, TypeKind, CursorKind
+from clang.cindex import Index, TypeKind, CursorKind, Type
 import copy
 import os
 import random
@@ -6,124 +6,12 @@ import re
 
 from header import TYPE_KIND_MAP, TAB
 
+
 class clangParserGenericError(Exception):
     pass
 
 class clangParserWrongNodeKindError(clangParserGenericError):
     pass
-
-def get_type_chain(type_node, type_chain):
-    """
-    GO RIGHT WHEN YOU CAN GO LEFT WHEN YOU MUST.
-
-    Type chain will contain a list which specifies the "type chain", e.g. a
-    pointer to an integer, int *:
-        type_chain = ['__pointer__', 'int']
-    An array of five integers, e.g. int[5]:
-        type_chain = [('__array__', 5), 'int']
-    An array of ten pointers to array of five integers,
-    e.g. int (*[10])[5]:
-        type_chain = [('__array__', 10), '__pointer__', ('__array__', 5), 'int']
-
-    __pointer__ and __array__ strings denote pointers and arrays. The
-    underscores are to avoid confusion in case some type is actually called
-    "pointer" or "array" in the C source.
-
-    Due to the recursive nature of the function and Python storing references
-    of function parameters over calls, an initial type_chain has to be given to
-    the method. This usually is just an empty list.
-    """
-    # Small sanity check.
-    if not isinstance(type_node.kind, TypeKind):
-        msg = 'type_node.kind is not of type TypeKind.'
-        raise TypeError(msg)
-    # A native type is mapped via a dictionary lookup.
-    if type_node.kind in TYPE_KIND_MAP:
-        type_chain.append(TYPE_KIND_MAP[type_node.kind])
-    # Store an eventual pointer and recursivly call the function.
-    elif type_node.kind is TypeKind.POINTER:
-        type_chain.append('__pointer__')
-        get_type_chain(type_node.get_pointee(), type_chain)
-    # An array is another possibility.
-    elif type_node.kind is TypeKind.CONSTANTARRAY:
-        array_size = type_node.get_array_size()
-        type_chain.append(('__array__', array_size))
-        get_type_chain(type_node.get_array_element_type(), type_chain)
-    # If it is a typedef lookup, get the original type and return. The chains
-    # stops here and the type should be defined by another typedef somewhere.
-    elif type_node.kind is TypeKind.TYPEDEF:
-        type_chain.append(type_node.get_declaration().displayname)
-    else:
-        type_chain.append(type_node.get_declaration().displayname)
-    return type_chain
-
-
-def assemble_type_string(type_chain, type_string=''):
-    """
-    Takes a type chain as returned by get_type_chain and assembles a string
-    from it.
-
-    >>> type_chain = ['__pointer__', 'int']
-    >>> print assemble_type_string(type_chain)
-    int *
-
-    If type_string is given it will be inserted as if it is the name given during
-    a typedef, e.g.
-    >>> type_chain = [('__array__', 10), '__pointer__', ('__array__', 5), 'int']
-    >>> print assemble_type_string(type_chain, type_string='cmplxIntType')
-    int (*cmplxIntType[10])[5]
-
-    Omitting it will just not insert anything.
-    >>> print assemble_type_string(type_chain)
-    int (*[10])[5]
-
-    Customs types are possible if. They have to be given in the type chain.
-    >>> type_chain = [('__array__', 10), '__pointer__', ('__array__', 5), 'other_int']
-    >>> print assemble_type_string(type_chain, type_string='cmplxIntType')
-    other_int (*cmplxIntType[10])[5]
-    """
-    # Create a copy because it will be altered.
-    type_chain = type_chain[:]
-    previous_type = None
-    while type_chain:
-        # Pop the first item.
-        item = type_chain.pop(0)
-        # Array.
-        if isinstance(item, tuple) and item[0] == '__array__':
-            # Set brackets if necessary.
-            if previous_type == '__pointer__':
-                type_string = '(%s)' % type_string
-            type_string += '[%i]' % item[1]
-        # Pointer.
-        elif item == '__pointer__':
-            type_string = '*' + type_string
-        elif isinstance(item, basestring):
-            type_string = '%s %s' % (item, type_string)
-        else:
-            from IPython.core.debugger import Tracer; Tracer()()
-        previous_type = item
-    return type_string
-
-
-def get_pretty_typekind_string(type_node, type_string='',
-                               force_final_type_to=False):
-    """
-    If force_final_type_to is a string, the final type, e.g. the last item in
-    the type chain will be replaced with it. This enables to pass typedef'ed
-    types, e.g force_final_type_to='new_int' will transform
-        int *newInts[8]
-    to
-        new_int *newInts[8]
-    """
-    chain = get_type_chain(type_node, type_chain=[])
-    # Modify the type chain if necessary.
-    if force_final_type_to is not False:
-        if chain and isinstance(chain[-1], basestring) and \
-           chain[-1] != '__pointer__':
-            chain.pop(-1)
-        chain.append(force_final_type_to)
-    ret_str = assemble_type_string(chain, type_string)
-    return ret_str.strip()
 
 
 class Node(object):
@@ -135,7 +23,6 @@ class Node(object):
         # it from within every class member.
         self.file_parser = parser
         self.files_to_parse = parser.files_to_parse
-        self.type_collection = parser.type_collection
         self.used_names = parser.used_names
 
         self.node = node
@@ -150,6 +37,16 @@ class Node(object):
         # Always parse the node during initialization and assemble the Cython
         # string.
         self._parse_node()
+
+    def _add_type_to_collection(self, type_kind):
+        """
+        Add a type to the global type collection.
+        """
+        if not isinstance(type_kind, Type):
+            msg = "Not a clang.cindex.Type instance."
+            raise TypeError(msg)
+        # Store as (file_path
+        self.file_parser.type_collection.append(type_kind)
 
     def _parse_node(self):
         raise NotImplementedError
@@ -180,6 +77,121 @@ class Node(object):
                 break
         self.node_name = class_name
         self.used_names.append(self.node_name)
+
+    def get_type_chain(self, type_node, type_chain):
+        """
+        GO RIGHT WHEN YOU CAN GO LEFT WHEN YOU MUST.
+
+        Type chain will contain a list which specifies the "type chain", e.g. a
+        pointer to an integer, int *:
+            type_chain = ['__pointer__', 'int']
+        An array of five integers, e.g. int[5]:
+            type_chain = [('__array__', 5), 'int']
+        An array of ten pointers to array of five integers,
+        e.g. int (*[10])[5]:
+            type_chain = [('__array__', 10), '__pointer__', ('__array__', 5), 'int']
+
+        __pointer__ and __array__ strings denote pointers and arrays. The
+        underscores are to avoid confusion in case some type is actually called
+        "pointer" or "array" in the C source.
+
+        Due to the recursive nature of the function and Python storing references
+        of function parameters over calls, an initial type_chain has to be given to
+        the method. This usually is just an empty list.
+        """
+        # Small sanity check.
+        if not isinstance(type_node.kind, TypeKind):
+            msg = 'type_node.kind is not of type TypeKind.'
+            raise TypeError(msg)
+        # A native type is mapped via a dictionary lookup.
+        if type_node.kind in TYPE_KIND_MAP:
+            type_chain.append(TYPE_KIND_MAP[type_node.kind])
+        # Store an eventual pointer and recursivly call the function.
+        elif type_node.kind is TypeKind.POINTER:
+            type_chain.append('__pointer__')
+            self.get_type_chain(type_node.get_pointee(), type_chain)
+        # An array is another possibility.
+        elif type_node.kind is TypeKind.CONSTANTARRAY:
+            array_size = type_node.get_array_size()
+            type_chain.append(('__array__', array_size))
+            self.get_type_chain(type_node.get_array_element_type(), type_chain)
+        # If it is a typedef lookup, get the original type and return. The chains
+        # stops here and the type should be defined by another typedef somewhere.
+        elif type_node.kind is TypeKind.TYPEDEF:
+            self._add_type_to_collection(type_node)
+            type_chain.append(type_node.get_declaration().displayname)
+        else:
+            self._add_type_to_collection(type_node)
+            type_chain.append(type_node.get_declaration().displayname)
+        return type_chain
+
+
+    @staticmethod
+    def assemble_type_string(type_chain, type_string=''):
+        """
+        Takes a type chain as returned by get_type_chain and assembles a string
+        from it.
+
+        >>> type_chain = ['__pointer__', 'int']
+        >>> print Node.assemble_type_string(type_chain)
+        int *
+
+        If type_string is given it will be inserted as if it is the name given during
+        a typedef, e.g.
+        >>> type_chain = [('__array__', 10), '__pointer__', ('__array__', 5), 'int']
+        >>> print Node.assemble_type_string(type_chain, type_string='cmplxIntType')
+        int (*cmplxIntType[10])[5]
+
+        Omitting it will just not insert anything.
+        >>> print Node.assemble_type_string(type_chain)
+        int (*[10])[5]
+
+        Customs types are possible if. They have to be given in the type chain.
+        >>> type_chain = [('__array__', 10), '__pointer__', ('__array__', 5), 'other_int']
+        >>> print Node.assemble_type_string(type_chain, type_string='cmplxIntType')
+        other_int (*cmplxIntType[10])[5]
+        """
+        # Create a copy because it will be altered.
+        type_chain = type_chain[:]
+        previous_type = None
+        while type_chain:
+            # Pop the first item.
+            item = type_chain.pop(0)
+            # Array.
+            if isinstance(item, tuple) and item[0] == '__array__':
+                # Set brackets if necessary.
+                if previous_type == '__pointer__':
+                    type_string = '(%s)' % type_string
+                type_string += '[%i]' % item[1]
+            # Pointer.
+            elif item == '__pointer__':
+                type_string = '*' + type_string
+            elif isinstance(item, basestring):
+                type_string = '%s %s' % (item, type_string)
+            else:
+                from IPython.core.debugger import Tracer; Tracer()()
+            previous_type = item
+        return type_string
+
+    def get_pretty_typekind_string(self, type_node, type_string='',
+                                   force_final_type_to=False):
+        """
+        If force_final_type_to is a string, the final type, e.g. the last item in
+        the type chain will be replaced with it. This enables to pass typedef'ed
+        types, e.g force_final_type_to='new_int' will transform
+            int *newInts[8]
+        to
+            new_int *newInts[8]
+        """
+        chain = self.get_type_chain(type_node, type_chain=[])
+        # Modify the type chain if necessary.
+        if force_final_type_to is not False:
+            if chain and isinstance(chain[-1], basestring) and \
+               chain[-1] != '__pointer__':
+                chain.pop(-1)
+            chain.append(force_final_type_to)
+        ret_str = self.assemble_type_string(chain, type_string)
+        return ret_str.strip()
 
 
 class MacroDefinitionNode(Node):
@@ -240,6 +252,7 @@ class TypedefNode(Node):
         """
         Parses a CursurKind.TYPEDEF_DECL node.
         """
+        self.use_canonical_type = kwargs.get('use_canonical_type', False)
         # Sanity check.
         if node.kind != CursorKind.TYPEDEF_DECL:
             msg = 'Not a valid type definition node.'
@@ -270,7 +283,11 @@ class TypedefNode(Node):
         # Check if the first child is a type reference, if so, the original
         # type is already a typdefed type. Pass the typedef name to the string
         # generator function.
-        if children and children[0].kind == CursorKind.TYPE_REF:
+        if self.use_canonical_type is False and children and \
+           children[0].kind == CursorKind.TYPE_REF:
+            # Append the type to the type collection to identify eventual
+            # external types.
+            self._add_type_to_collection(children[0].type.get_declaration().type)
             force_final_type = children[0].displayname
             # If the final type is more than one word, it is usually something
             # like 'struct x' or 'union x'. The specifiers are not needed for a
@@ -301,7 +318,7 @@ class TypedefNode(Node):
 
         # Get a pretty string representation of the original type.
         self.pretty_original_type = \
-            get_pretty_typekind_string(self.original_type, self.node_name,
+            self.get_pretty_typekind_string(self.original_type, self.node_name,
                                        force_final_type)
 
         # Assemble the Cython string. The syntax is almost the same as in C.
@@ -315,19 +332,6 @@ class TypedefNode(Node):
         self.cython_string = 'ctypedef %s' % \
             function_pointer_node.get_cython_string()
         return
-        # Get the return type and the function name.
-        # return_type = get_pretty_typekind_string(
-        #     self.original_type.get_pointee().get_result())
-        # function_name = self.node_name
-        # # The children are the parameters.
-        # params = []
-        # for child in self.node.get_children():
-        #     if child.kind != CursorKind.PARM_DECL:
-        #         continue
-        #     params.append('%s %s' % (
-        #         get_pretty_typekind_string(child.type).replace(' ', ''), child.spelling))
-        # self.cython_string = 'ctypedef %s (*%s)(%s)' % (return_type,
-        #     function_name, ', '.join(params))
 
 
 class FunctionPointerNode(Node):
@@ -346,14 +350,15 @@ class FunctionPointerNode(Node):
         self.canonical = node.type.get_canonical()
         # Sanity check.
         if self.canonical.kind != TypeKind.POINTER or \
-           self.canonical.get_pointee().kind != TypeKind.FUNCTIONPROTO:
+           (self.canonical.get_pointee().kind != TypeKind.FUNCTIONPROTO and \
+            self.canonical.get_pointee().kind != TypeKind.FUNCTIONNOPROTO):
             msg = 'Not a valid function pointer node.'
             raise clangParserWrongNodeKindError(msg)
         Node.__init__(self, node, *args, **kwargs)
 
     def _parse_node(self):
         # Get the return type and the function name.
-        return_type = get_pretty_typekind_string(
+        return_type = self.get_pretty_typekind_string(
             self.canonical.get_pointee().get_result())
         function_name = self.node_name
         # The children are the parameters.
@@ -362,7 +367,10 @@ class FunctionPointerNode(Node):
             if child.kind != CursorKind.PARM_DECL:
                 continue
             params.append('%s %s' % (
-                get_pretty_typekind_string(child.type).replace(' ', ''), child.spelling))
+                self.get_pretty_typekind_string(child.type).replace(' ', ''), child.spelling))
+            # Fix some formatting issues with unnamed function parameters which
+            # would result in a whitespace at the end.
+            params[-1] = params[-1].strip()
         self.cython_string = '%s (*%s)(%s)' % (return_type, function_name,
                                                ', '.join(params))
 
@@ -400,11 +408,12 @@ class StructOrUnionNode(Node):
             # Check if its a function pointer.
             canonical = field.type.get_canonical()
             if canonical.kind == TypeKind.POINTER and \
-               canonical.get_pointee().kind == TypeKind.FUNCTIONPROTO:
+               (canonical.get_pointee().kind == TypeKind.FUNCTIONPROTO or \
+                canonical.get_pointee().kind == TypeKind.FUNCTIONNOPROTO):
                 function_pointer_node = FunctionPointerNode(field, self.file_parser)
                 pretty_type = function_pointer_node.get_cython_string()
             else:
-                pretty_type = get_pretty_typekind_string(field.type,
+                pretty_type = self.get_pretty_typekind_string(field.type,
                                                          field.displayname)
             pretty_fields.append('%s%s' % (TAB, pretty_type))
         if len(pretty_fields) == 0:
@@ -465,12 +474,10 @@ class FunctionProtoNode(Node):
     def _parse_node(self):
         # Get the return type and its pretty representation.
         self.return_type = self.node.type.get_result()
-        # Append to return type to the central types collection.
-        self.type_collection.append(self.return_type)
 
         # XXX: What happens if a struct/union/enum is returned?
         self.pretty_return_string = \
-            get_pretty_typekind_string(self.return_type)
+            self.get_pretty_typekind_string(self.return_type)
         # XXX: Hacky
         self.pretty_return_string = self.pretty_return_string.replace(' ', '')
 
@@ -481,29 +488,29 @@ class FunctionProtoNode(Node):
             # Filter to only get the parameters.
             if param.kind != CursorKind.PARM_DECL:
                 continue
-            # Append the type of every parameter to the central type
-            # collection.
-            self.type_collection.append(param.type)
             # Struct, union, enum specifiers do not appear in the cython
             # function definition.
             if param.kind == CursorKind.STRUCT_DECL or \
                param.kind == CursorKind.UNION_DECL or \
                param.kind == CursorKind.ENUM_DECL:
                 continue
-            elif param.type.kind == TypeKind.POINTER:
-                start = param.extent.begin_int_data
-                end = param.extent.end_int_data
-                # XXX: Figure out way to do this within clang.
-                with open(os.path.abspath(param.location.file.name),
-                          'r') as file_object:
-                    file_object.seek(start - 2, 0)
-                    self.pretty_parameter_names.append(\
-                                    file_object.read(end - start))
-                continue
             else:
-                p_type = get_pretty_typekind_string(param.type)
+                p_type = self.get_pretty_typekind_string(param.type)
+            # Check if its a function pointer.
+            canonical = param.type.get_canonical()
+            if canonical.kind == TypeKind.POINTER and \
+               (canonical.get_pointee().kind == TypeKind.FUNCTIONPROTO or \
+                canonical.get_pointee().kind == TypeKind.FUNCTIONNOPROTO):
+                function_pointer_node = FunctionPointerNode(param, self.file_parser)
+                self.pretty_parameter_names.append(function_pointer_node.get_cython_string())
+                continue
+
             self.pretty_parameter_names.append('%s %s' % (p_type,
                                                param.displayname))
+            # Some formatting issues. Does not really change anything else.
+            # Maybe find a more concise way of doing this.
+            self.pretty_parameter_names[-1] = \
+                self.pretty_parameter_names[-1].replace(' * ', ' *')
         # Assemble the cython string.
         self.cython_string = '%s %s(%s)' % (self.pretty_return_string, self.node_name,
             ', '.join(self.pretty_parameter_names))
