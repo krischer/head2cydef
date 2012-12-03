@@ -16,10 +16,8 @@ testing_pairs['define_constants'] = (
 """.strip(),
 """
 cdef extern from [[[FILENAME]]] nogil:
-    cdef enum PI:
-        pass
-    cdef enum long_macro:
-        pass
+    enum: PI
+    enum: long_macro
 """.strip()
 )
 
@@ -105,17 +103,15 @@ typedef union tunion *TreePointerUnion;
 """.strip(),
 """
 cdef extern from [[[FILENAME]]] nogil:
-    cdef struct tnode:
-        pass
-
-    cdef union tunion:
-        pass
-
     ctypedef char c
     ctypedef char *cp
     ctypedef char carr[100]
     ctypedef c *arrayOfSixPointers[6]
+    cdef struct tnode:
+        pass
     ctypedef tnode *Treeptr
+    cdef union tunion:
+        pass
     ctypedef tunion *TreePointerUnion
 """.strip()
 )
@@ -146,7 +142,6 @@ cdef extern from [[[FILENAME]]] nogil:
     cdef struct Struct_temp_random_[[RANDOMINT]]:
         float *member_a
         int member_b
-
     ctypedef Struct_temp_random_[[RANDOMINT]] testStruct
 """.strip()
 )
@@ -164,7 +159,6 @@ cdef extern from [[[FILENAME]]] nogil:
     cdef struct test_struct:
         float *member_a
         int member_b
-
     ctypedef test_struct testStruct
 """.strip()
 )
@@ -198,7 +192,6 @@ cdef extern from [[[FILENAME]]] nogil:
     cdef union Union_temp_random_[[RANDOMINT]]:
         float *member_a
         int member_b
-
     ctypedef Union_temp_random_[[RANDOMINT]] testUnion
 """.strip()
 )
@@ -216,7 +209,6 @@ cdef extern from [[[FILENAME]]] nogil:
     cdef union test_union:
         float *member_a
         int member_b
-
     ctypedef test_union testUnion
 """.strip()
 )
@@ -276,7 +268,6 @@ cdef extern from [[[FILENAME]]] nogil:
     cdef enum Enum_temp_random_[[RANDOMINT]]:
         member_a
         member_b
-
     ctypedef Enum_temp_random_[[RANDOMINT]] testEnum
 """.strip()
 )
@@ -294,7 +285,6 @@ cdef extern from [[[FILENAME]]] nogil:
     cdef enum test_enum:
         member_a
         member_b
-
     ctypedef test_enum testEnum
 """.strip()
 )
@@ -353,27 +343,24 @@ cdef extern from [[[FILENAME]]] nogil:
     cdef enum test_enum:
         member_a
         member_b
+    ctypedef test_enum testEnum
     cdef enum otherEnum:
         item_one
         item_two
-
     cdef struct test_struct:
         float *member_a
         int member_b
+    ctypedef test_struct testStruct
     cdef struct otherStruct:
         int item_one
         float item_two
-
     cdef union test_union:
         int member_a
         float member
+    ctypedef test_union testUnion
     cdef union otherUnion:
         int item_one
         float item_two
-
-    ctypedef test_enum testEnum
-    ctypedef test_struct testStruct
-    ctypedef test_union testUnion
 """.strip()
 )
 
@@ -403,7 +390,6 @@ newFloat* doStuff(newFloat a, float* b);
 """
 cdef extern from [[[FILENAME]]] nogil:
     ctypedef float newFloat
-
     newFloat* doStuff(newFloat a, float *b)
 """.strip()
 )
@@ -503,5 +489,104 @@ cdef extern from "stdio.h" nogil:
 
 cdef extern from [[[FILENAME]]] nogil:
     FILE dummyFunc()
+""".strip()
+)
+
+# Test a function pointer to a typedef of a previously unnamed enum.
+testing_pairs['function_pointer_to_enum'] = (
+"""
+typedef enum
+{
+    RETRY,
+    BREAK
+} enumName;
+
+typedef enumName (*function)(const float* data, void* other_data);
+""".strip(),
+"""
+cdef extern from [[[FILENAME]]] nogil:
+    cdef enum Enum_temp_random_[[RANDOMINT]]:
+        RETRY
+        BREAK
+    ctypedef Enum_temp_random_[[RANDOMINT]] enumName
+    ctypedef enumName (*function)(float* data, void* other_data)
+""".strip()
+)
+
+# Nested structs and unions will be decomposed.
+testing_pairs['nested_structs_and_unions'] = (
+"""
+typedef struct outer_struct {
+    int field_1;
+    union {
+        struct
+        {
+            float *inner_struct_field_a;
+            int inner_struct_field_b;
+        } inner_struct;
+    } inner_union;
+} outerStruct;
+""".strip(),
+"""
+cdef extern from [[[FILENAME]]] nogil:
+    cdef struct Struct_temp_random_[[RANDOMINT]]:
+        float *inner_struct_field_a
+        int inner_struct_field_b
+    cdef union Union_temp_random_[[RANDOMINT]]:
+        Struct_temp_random_[[RANDOMINT]] inner_struct
+    cdef struct outer_struct:
+        int field_1
+        Union_temp_random_[[RANDOMINT]] inner_union
+    ctypedef outer_struct outerStruct
+""".strip()
+)
+
+testing_pairs['test_correct_include_parsing'] = (
+"""
+#include <sys/types.h>
+typedef off_t file_size_int;
+""".strip(),
+"""
+cdef extern from "sys/types.h" nogil:
+    ctypedef long long off_t
+
+cdef extern from [[[FILENAME]]] nogil:
+    ctypedef off_t file_size_int
+""".strip()
+)
+
+# Test some issues with include va_list from stdarg.h
+testing_pairs['test_including_va_list'] = (
+"""
+#include <stdarg.h>
+
+int some_func(va_list param_1, int * param_2);
+""".strip(),
+"""
+cdef extern from "stdarg.h" nogil:
+    ctypedef void *va_list
+
+cdef extern from [[[FILENAME]]] nogil:
+    int some_func(va_list param_1, int *param_2)
+""".strip()
+)
+
+# Test a formatting issue
+testing_pairs['test_unsigned_formatting_issue'] = (
+"""
+struct test_struct {
+    unsigned int * param_1;
+    short int param_2;
+}
+void test_func(void (*func)(unsigned char param_1, int param_2));
+void test_func_2(void (*func)(unsigned int param_1, int param_2));
+""".strip(),
+"""
+cdef extern from [[[FILENAME]]] nogil:
+    cdef struct test_struct:
+        unsigned int *param_1
+        short param_2
+    void test_func(void (*func)(unsigned char param_1, int param_2))
+    void test_func_2(void (*func)(unsigned int param_1, int param_2))
 """.strip()
 )

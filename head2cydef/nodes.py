@@ -241,7 +241,7 @@ class MacroDefinitionNode(Node):
             self.is_define_constant = False
         else:
             self.is_define_constant = True
-        self.cython_string = "cdef enum %s:\n%spass" % (self.node_name, TAB)
+        self.cython_string = "enum: %s" % self.node_name
 
 
 class TypedefNode(Node):
@@ -293,27 +293,15 @@ class TypedefNode(Node):
             # like 'struct x' or 'union x'. The specifiers are not needed for a
             # typedef in Cython.
             force_final_type = force_final_type.split()[-1]
-        # It can also be a struct. If it is, loop through the list of all
-        # structs, finds the correct one and get the name.
-        elif children and children[0].kind == CursorKind.STRUCT_DECL:
-            structs = self.file_parser.parsed_nodes['structs']
-            for struct in structs:
-                if bool(struct.node==children[0]):
-                    force_final_type = struct.node_name
-                    break
-        # The same is possible with unions.
-        elif children and children[0].kind == CursorKind.UNION_DECL:
-            unions = self.file_parser.parsed_nodes['unions']
-            for union in unions:
-                if bool(union.node==children[0]):
-                    force_final_type = union.node_name
-                    break
-        # And also with enums.
-        elif children and children[0].kind == CursorKind.ENUM_DECL:
-            enums = self.file_parser.parsed_nodes['enums']
-            for enum in enums:
-                if bool(enum.node==children[0]):
-                    force_final_type = enum.node_name
+        # It can also be a struct/union/enum. If it is, loop through the list of all
+        # nodes, finds the correct one and get the name.
+        elif children and (children[0].kind == CursorKind.STRUCT_DECL or \
+                          children[0].kind == CursorKind.UNION_DECL or \
+                          children[0].kind == CursorKind.ENUM_DECL):
+            all_nodes = self.file_parser.all_parsed_nodes
+            for node in all_nodes:
+                if bool(node.node==children[0]):
+                    force_final_type = node.node_name
                     break
 
         # Get a pretty string representation of the original type.
@@ -360,14 +348,25 @@ class FunctionPointerNode(Node):
         # Get the return type and the function name.
         return_type = self.get_pretty_typekind_string(
             self.canonical.get_pointee().get_result())
+        if return_type.strip() == '':
+            # If the return type is none, it refers to a typedef of a
+            # previously unnamed struct/union/enum. Find that typedef.
+            declaration = self.node.type.get_declaration()
+            for child in declaration.get_children():
+                if child.kind == CursorKind.TYPE_REF:
+                    return_type = child.displayname
+
         function_name = self.node_name
         # The children are the parameters.
         params = []
         for child in self.node.get_children():
             if child.kind != CursorKind.PARM_DECL:
                 continue
-            params.append('%s %s' % (
-                self.get_pretty_typekind_string(child.type).replace(' ', ''), child.spelling))
+            # Fix some pure formatting issues with spaces between pointer
+            # declarations and some other minor issues.
+            pretty_type_string = \
+                self.get_pretty_typekind_string(child.type).replace(' *', '*')
+            params.append('%s %s' % (pretty_type_string, child.spelling))
             # Fix some formatting issues with unnamed function parameters which
             # would result in a whitespace at the end.
             params[-1] = params[-1].strip()
@@ -395,6 +394,26 @@ class StructOrUnionNode(Node):
     def _parse_node(self):
         self.fields = []
         for child in self.node.get_children():
+            # If it is a struct/union and as NO children, add the struct/node
+            # to the file parser object. If has children, it will interestingly
+            # already be contained in the root node's nodes. This seems rather
+            # inconsistently handled by clang.
+            if child.kind == CursorKind.UNION_DECL:
+                grandchilds = []
+                for _i in child.get_children():
+                    grandchilds.append(_i)
+                if not grandchilds:
+                    node = UnionNode(child, self.file_parser)
+                    self.file_parser.all_parsed_nodes.append(node)
+                    continue
+            if child.kind == CursorKind.STRUCT_DECL:
+                grandchilds = []
+                for _i in child.get_children():
+                    grandchilds.append(_i)
+                if not grandchilds:
+                    node = StructNode(child, self.file_parser)
+                    self.file_parser.all_parsed_nodes.append(node)
+                    continue
             # Only get field declarations.
             if child.kind != CursorKind.FIELD_DECL:
                 continue
@@ -404,6 +423,18 @@ class StructOrUnionNode(Node):
         pretty_fields = []
         for field in self.fields:
             if field.kind != CursorKind.FIELD_DECL:
+                continue
+            if field.type.get_declaration().kind == CursorKind.UNION_DECL:
+                node = UnionNode(field.type.get_declaration(), self.file_parser)
+                self.file_parser.all_parsed_nodes.append(node)
+                pretty_fields.append('%s%s %s' % (TAB, node.node_name,
+                                                  field.displayname))
+                continue
+            if field.type.get_declaration().kind == CursorKind.STRUCT_DECL:
+                node = StructNode(field.type.get_declaration(), self.file_parser)
+                self.file_parser.all_parsed_nodes.append(node)
+                pretty_fields.append('%s%s %s' % (TAB, node.node_name,
+                                                  field.displayname))
                 continue
             # Check if its a function pointer.
             canonical = field.type.get_canonical()
@@ -474,6 +505,7 @@ class FunctionProtoNode(Node):
     def _parse_node(self):
         # Get the return type and its pretty representation.
         self.return_type = self.node.type.get_result()
+        self._add_type_to_collection(self.return_type)
 
         # XXX: What happens if a struct/union/enum is returned?
         self.pretty_return_string = \
@@ -488,6 +520,7 @@ class FunctionProtoNode(Node):
             # Filter to only get the parameters.
             if param.kind != CursorKind.PARM_DECL:
                 continue
+            self._add_type_to_collection(param.type)
             # Struct, union, enum specifiers do not appear in the cython
             # function definition.
             if param.kind == CursorKind.STRUCT_DECL or \
@@ -504,6 +537,13 @@ class FunctionProtoNode(Node):
                 function_pointer_node = FunctionPointerNode(param, self.file_parser)
                 self.pretty_parameter_names.append(function_pointer_node.get_cython_string())
                 continue
+
+            # Handle compiler specific datatype va_list.
+            # XXX: Only tested with gcc and it will likely not correctly work
+            # with other compilers.
+            if p_type == '__va_list_tag *':
+                p_type = 'va_list'
+                self.file_parser.is_va_list_used = True
 
             self.pretty_parameter_names.append('%s %s' % (p_type,
                                                param.displayname))

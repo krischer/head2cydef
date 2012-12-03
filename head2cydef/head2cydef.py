@@ -37,15 +37,51 @@ class CFileParser(object):
         self.translation_unit = self.index.parse(self.filename, options=1)
         self.cursor = self.translation_unit.cursor
 
+        # Get all includes.
+        self.includes = []
+        for _i in self.translation_unit.get_includes():
+            # if os.path.abspath(_i.location.file.name) in self.files_to_parse \
+            #    and os.path.abspath(_i.include.name) not in self.files_to_parse:
+            self.includes.append(_i)
+        # Get the exact include statement.
+        # XXX: I could not find a way to do this within clang. Is there one?
+        self.include_map = {}
+        for inc in self.includes:
+            # Open the file to read the correct line.
+            with open(inc.location.file.name, 'r') as open_file:
+                line_of_interest = inc.location.line
+                for _i, line in enumerate(open_file):
+                    if _i + 1 < line_of_interest:
+                        continue
+                    elif _i + 1 == line_of_interest:
+                        include_line = line
+                        break
+                    else:
+                        break
+            # XXX: Replace with regex!
+            include_line = include_line.replace('#', '')
+            include_line = include_line.replace('include', '')
+            include_line = include_line.replace('<', '')
+            include_line = include_line.replace('>', '')
+            include_line = include_line.replace('"', '')
+            # XXX: What is this include_next thing??
+            #      Maybe something llvm exclusive?
+            include_line = include_line.replace('_next', '')
+            include_line = include_line.replace('"', '').strip()
+
+            include_filename = os.path.abspath(inc.include.name)
+            if include_filename in self.include_map:
+                if self.include_map[include_filename] != include_line:
+                    msg = 'Includes referencing same file included with ' + \
+                          'different statements.'
+                    raise Exeption(msg)
+            else:
+                self.include_map[include_filename] = include_line
+            # if 'next' in self.include_map[include_filename]:
+            #     from IPython.core.debugger import Tracer; Tracer()()
+
         self._setup_data_structure()
         self._sort_toplevel_nodes()
-        self.parse_all_nodes()
-        # Parse the external types 10 times. This is an arbitrary level but
-        # external types might refer to types that are defined elsewhere.
-        # Running this 10 times will allow the parser to go 10 levels deep
-        # which should be enough in most cases.
-        # for _ in xrange(10):
-        #     self.parse_external_types()
         self.parse_external_types()
 
 
@@ -84,11 +120,25 @@ class CFileParser(object):
             'unsorted': []
         }
 
+        self.all_parsed_nodes = []
+        self.unsorted_nodes = []
+
     def _sort_toplevel_nodes(self):
         """
         Sort all toplevel nodes in the corresponding lists in
         self.unparsed_nodes.
         """
+        # Figure out the already given names. Typedefs cannot use these again.
+        # Mainly just important for e.g.
+        #   struct Example;
+        #   typedef struct Example Example;
+        # which maps (in Cython) to
+        #   cdef struct Example:
+        #       pass
+        # Therefore the typedef will be omitted in this case because it is not
+        # needed (nor possible to assign) in Cython.
+        self.type_names = []
+
         # Loop through all top level nodes and sort them by CursorKind.
         for cursor in self.cursor.get_children():
             # Filter out all nodes that do not have their origin in a file in
@@ -101,82 +151,30 @@ class CFileParser(object):
             # provided lists.
             kind = cursor.kind
             if kind == CursorKind.TYPEDEF_DECL:
-                self.unparsed_nodes['typedefs'].append(cursor)
+                self.all_parsed_nodes.append(TypedefNode(cursor, parser=self))
             elif kind == CursorKind.FUNCTION_DECL:
-                self.unparsed_nodes['functionprotos'].append(cursor)
+                self.all_parsed_nodes.append(FunctionProtoNode(cursor,
+                                                               parser=self))
             elif kind == CursorKind.STRUCT_DECL:
-                self.unparsed_nodes['structs'].append(cursor)
-            elif kind == CursorKind.UNION_DECL:
-                self.unparsed_nodes['unions'].append(cursor)
-            elif kind == CursorKind.ENUM_DECL:
-                self.unparsed_nodes['enums'].append(cursor)
-            elif kind == CursorKind.MACRO_DEFINITION:
-                self.unparsed_nodes['macro_definitions'].append(cursor)
-            else:
-                self.unparsed_nodes['unsorted'].append(cursor)
-
-    def parse_all_nodes(self):
-        """
-        Parses all currently unparsed nodes in self.unparsed_nodes.
-        """
-        self.parse_macro_definition_nodes()
-        self.parse_struct_nodes()
-        self.parse_union_nodes()
-        self.parse_enum_nodes()
-        self.parse_function_prototype_nodes()
-
-        # Figure out the already given names. Typedefs cannot use these again.
-        # Mainly just important for e.g.
-        #   struct Example;
-        #   typedef struct Example Example;
-        # which maps (in Cython) to
-        #   cdef struct Example:
-        #       pass
-        # Therefore the typedef will be omitted in this case because it is not
-        # needed (nor possible to assign) in Cython.
-        self.type_names = []
-        node_types = ['structs', 'unions', 'enums']
-        for node_name in node_types:
-            nodes = self.parsed_nodes[node_name]
-            for node in nodes:
+                node = StructNode(cursor, parser=self)
                 self.type_names.append(node.node_name)
-
-        # Typedef nodes need to be parsed at the end.
-        self.parse_typedef_nodes()
-
-
-    def parse_macro_definition_nodes(self):
-        for node in self.unparsed_nodes['macro_definitions']:
-            macro_node = MacroDefinitionNode(node, parser=self)
-            # Only append define constants. Preprocessor macros are not
-            # supported and likely never will be supported for conversion to
-            # Cython header files. Types would need to be declared and that
-            # cannot be done automatically.
-            if macro_node.is_define_constant is True:
-                self.parsed_nodes['macro_definitions'].append(macro_node)
-
-    def parse_typedef_nodes(self):
-        for t_node in self.unparsed_nodes['typedefs']:
-            node = TypedefNode(t_node, parser=self)
-            self.parsed_nodes['typedefs'].append(node)
-
-    def parse_struct_nodes(self):
-        for struct_node in self.unparsed_nodes['structs']:
-            self.parsed_nodes['structs'].append(StructNode(struct_node, parser=self))
-
-    def parse_union_nodes(self):
-        for union_node in self.unparsed_nodes['unions']:
-            self.parsed_nodes['unions'].append(UnionNode(union_node,
-                                                         parser=self))
-
-    def parse_enum_nodes(self):
-        for enum_node in self.unparsed_nodes['enums']:
-            self.parsed_nodes['enums'].append(EnumNode(enum_node, parser=self))
-
-    def parse_function_prototype_nodes(self):
-        for proto in self.unparsed_nodes['functionprotos']:
-            self.parsed_nodes['functionprotos'].append(
-                FunctionProtoNode(proto, parser=self))
+                self.all_parsed_nodes.append(node)
+            elif kind == CursorKind.UNION_DECL:
+                node = UnionNode(cursor, parser=self)
+                self.type_names.append(node.node_name)
+                self.all_parsed_nodes.append(node)
+            elif kind == CursorKind.ENUM_DECL:
+                node = EnumNode(cursor, parser=self)
+                self.type_names.append(node.node_name)
+                self.all_parsed_nodes.append(node)
+            elif kind == CursorKind.MACRO_DEFINITION:
+                node = MacroDefinitionNode(cursor, parser=self)
+                # Only append #define constants and no macros. These need to be
+                # defined by hand due to unresolvable type issues.
+                if node.is_define_constant is True:
+                    self.all_parsed_nodes.append(node)
+            else:
+                self.unsorted_nodes.append(cursor)
 
     def parse_external_types(self):
         self.sorted_external_types = {}
@@ -187,18 +185,22 @@ class CFileParser(object):
             # anyway.
             if e_type.location.file is None:
                 continue
-            filepath = os.path.abspath(e_type.location.file.name)
-            if filepath in self.files_to_parse:
+            include_path = e_type.location.file.name
+            if os.path.abspath(include_path) in self.files_to_parse:
                 continue
-            if filepath not in self.sorted_external_types:
-                self.sorted_external_types[filepath] = []
-            if e_type not in self.sorted_external_types[filepath]:
-                self.sorted_external_types[filepath].append(e_type)
+            if include_path not in self.sorted_external_types:
+                self.sorted_external_types[include_path] = []
+            if e_type not in self.sorted_external_types[include_path]:
+                self.sorted_external_types[include_path].append(e_type)
 
     def render_external_types(self, file_object):
         for key, value in self.sorted_external_types.iteritems():
-            filename = os.path.basename(key)
-            file_object.write('cdef extern from "%s" nogil:\n' % filename)
+            try:
+                self.include_map[key]
+            except:
+                from IPython.core.debugger import Tracer; Tracer()()
+            file_object.write('cdef extern from "%s" nogil:\n' % \
+                              self.include_map[key])
             # XXX: Currently only works with typedef nodes, but I think that
             # covers most uses. Will raise a more or less meaningful error if
             # an unexpected node arrives.
@@ -231,23 +233,32 @@ class CFileParser(object):
             return
         self._render_cython_header(filename_or_object)
 
+    def render_va_list_header(self, filename_or_object):
+        """
+        The va_list type is implementation specific. The current way should
+        work with gcc and is untested with other compilers. va_start, va_end,
+        ... are currently not supported because they are probably not used very
+        much in C header files.
+        """
+        if not hasattr(self, 'is_va_list_used') or not self.is_va_list_used:
+            return
+        filename_or_object.write('cdef extern from "stdarg.h" nogil:\n' + \
+                                 '%sctypedef void *va_list\n\n' % TAB)
+
     def _render_cython_header(self, file_object):
         self.render_external_types(file_object)
+        self.render_va_list_header(file_object)
 
         file_object.write('cdef extern from "%s" nogil:\n' % \
                           os.path.basename(self.filename))
         node_names = ['macro_definitions', 'enums', 'structs', 'unions',
                       'typedefs', 'functionprotos']
-        for name in node_names:
-            if len(self.parsed_nodes[name]) == 0:
+        for node in self.all_parsed_nodes:
+            # Do not typedef already defined names. Mainly occurring if some
+            # structure has the same name as a typedef to it.
+            if isinstance(node, TypedefNode) and node.node_name in self.type_names:
                 continue
-            # file_object.write('#' + 78 * '=' + '\n')
-            # file_object.write('# %s\n' % name.upper())
-            for node in self.parsed_nodes[name]:
-                if name == 'typedefs' and node.node_name in self.type_names:
-                    continue
-                cython_string = node.get_cython_string().splitlines(True)
-                for line in cython_string:
-                    file_object.write('%s%s' % (TAB, line))
-                file_object.write('\n')
+            cython_string = node.get_cython_string().splitlines(True)
+            for line in cython_string:
+                file_object.write('%s%s' % (TAB, line))
             file_object.write('\n')
