@@ -1,10 +1,9 @@
 from head2cydef import Node
 
+
 class TypedefNode(Node):
     """
     Parses a typedef node.
-
-    XXX: The parsing feels kind of messy and might not be fully correct.
     """
     def __init__(self, node):
         """
@@ -29,7 +28,7 @@ class TypedefNode(Node):
             for child in self.node.get_children():
                 if child.kind == CursorKind.PARM_DECL:
                     self.func_params.append(child)
-                elif child.kind ==  CursorKind.TYPE_REF:
+                elif child.kind == CursorKind.TYPE_REF:
                     self.original_type = child.displayname
                     exist_after_loop = True
             if exist_after_loop:
@@ -117,7 +116,6 @@ class TypedefNode(Node):
             else:
                 raise NotImplementedError
 
-
     def get_cython_string(self):
         if self.is_typecast is True or self.pretty_original_type:
             return 'c%s' % self.get_C_string()[:-1]
@@ -173,4 +171,3 @@ class TypedefNode(Node):
                     self.original_type.type.get_canonical().get_declaration()
                     return self.get_cython_string()
                 raise NotImplementedError
-

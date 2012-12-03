@@ -10,10 +10,10 @@ import unittest
 
 from head2cydef import CFileParser
 from head2cydef import nodes
-import testing_constructs
 from testing_constructs import testing_pairs
 
 init()
+
 
 class HeaderToCythonTestCase(unittest.TestCase):
     def setUp(self):
@@ -53,8 +53,8 @@ class HeaderToCythonTestCase(unittest.TestCase):
             cython_code = cython_code.replace('[[[FILENAME]]]',
                               '"%s"' % os.path.basename(self.temp_file))
 
-            # Randomly created struct/unions/enums names are possible. These will
-            # have the names
+            # Randomly created struct/unions/enums names are possible. These
+            # will have the names
             #   Struct_temp_random_[[RANDOMINT]]
             #   Union_temp_random_[[RANDOMINT]]
             #   Enum_temp_random_[[RANDOMINT]]
@@ -98,7 +98,8 @@ class HeaderToCythonTestCase(unittest.TestCase):
                 print 'Expected cython code:', Fore.RESET
                 print cython_code, Fore.BLUE
                 print '_' * 80, Fore.YELLOW
-                print 'Received cython code (- needs to go, + to get there):', Fore.RESET
+                print 'Received cython code (- needs to go, + to get there):',\
+                    Fore.RESET
 
                 for line in diff:
                     if line.startswith('  '):

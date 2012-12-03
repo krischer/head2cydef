@@ -84,7 +84,6 @@ class CFileParser(object):
         self._sort_toplevel_nodes()
         self.parse_external_types()
 
-
     def _setup_data_structure(self):
         """
         Create some dictionaries for internal data handling.
@@ -251,12 +250,11 @@ class CFileParser(object):
 
         file_object.write('cdef extern from "%s" nogil:\n' % \
                           os.path.basename(self.filename))
-        node_names = ['macro_definitions', 'enums', 'structs', 'unions',
-                      'typedefs', 'functionprotos']
         for node in self.all_parsed_nodes:
             # Do not typedef already defined names. Mainly occurring if some
             # structure has the same name as a typedef to it.
-            if isinstance(node, TypedefNode) and node.node_name in self.type_names:
+            if isinstance(node, TypedefNode) and node.node_name in \
+                self.type_names:
                 continue
             cython_string = node.get_cython_string().splitlines(True)
             for line in cython_string:

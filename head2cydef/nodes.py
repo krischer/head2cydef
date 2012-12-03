@@ -1,14 +1,12 @@
-from clang.cindex import Index, TypeKind, CursorKind, Type
-import copy
-import os
+from clang.cindex import TypeKind, CursorKind, Type
 import random
-import re
 
 from header import TYPE_KIND_MAP, TAB
 
 
 class clangParserGenericError(Exception):
     pass
+
 
 class clangParserWrongNodeKindError(clangParserGenericError):
     pass
@@ -89,15 +87,16 @@ class Node(object):
             type_chain = [('__array__', 5), 'int']
         An array of ten pointers to array of five integers,
         e.g. int (*[10])[5]:
-            type_chain = [('__array__', 10), '__pointer__', ('__array__', 5), 'int']
+            type_chain = [('__array__', 10), '__pointer__', ('__array__', 5),
+            'int']
 
         __pointer__ and __array__ strings denote pointers and arrays. The
         underscores are to avoid confusion in case some type is actually called
         "pointer" or "array" in the C source.
 
-        Due to the recursive nature of the function and Python storing references
-        of function parameters over calls, an initial type_chain has to be given to
-        the method. This usually is just an empty list.
+        Due to the recursive nature of the function and Python storing
+        references of function parameters over calls, an initial type_chain has
+        to be given to the method. This usually is just an empty list.
         """
         # Small sanity check.
         if not isinstance(type_node.kind, TypeKind):
@@ -115,8 +114,9 @@ class Node(object):
             array_size = type_node.get_array_size()
             type_chain.append(('__array__', array_size))
             self.get_type_chain(type_node.get_array_element_type(), type_chain)
-        # If it is a typedef lookup, get the original type and return. The chains
-        # stops here and the type should be defined by another typedef somewhere.
+        # If it is a typedef lookup, get the original type and return. The
+        # chains stops here and the type should be defined by another typedef
+        # somewhere.
         elif type_node.kind is TypeKind.TYPEDEF:
             self._add_type_to_collection(type_node)
             type_chain.append(type_node.get_declaration().displayname)
@@ -124,7 +124,6 @@ class Node(object):
             self._add_type_to_collection(type_node)
             type_chain.append(type_node.get_declaration().displayname)
         return type_chain
-
 
     @staticmethod
     def assemble_type_string(type_chain, type_string=''):
@@ -136,8 +135,8 @@ class Node(object):
         >>> print Node.assemble_type_string(type_chain)
         int *
 
-        If type_string is given it will be inserted as if it is the name given during
-        a typedef, e.g.
+        If type_string is given it will be inserted as if it is the name given
+        during a typedef, e.g.
         >>> type_chain = [('__array__', 10), '__pointer__', ('__array__', 5), 'int']
         >>> print Node.assemble_type_string(type_chain, type_string='cmplxIntType')
         int (*cmplxIntType[10])[5]
@@ -300,7 +299,7 @@ class TypedefNode(Node):
                           children[0].kind == CursorKind.ENUM_DECL):
             all_nodes = self.file_parser.all_parsed_nodes
             for node in all_nodes:
-                if bool(node.node==children[0]):
+                if bool(node.node == children[0]):
                     force_final_type = node.node_name
                     break
 
