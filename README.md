@@ -10,6 +10,28 @@ follow dependencies across multiple typedefs and is very stable in regards to
 syntax parsing. It could also be used to create Cython definition files for C++
 headers, although this is not implemented yet.
 
+## Installation
+Currently tested with Python 2.7. First make sure the following dependencies are installed:
+
+* clang (Short explanation and installation instructions can be found [here](https://github.com/krischer/head2cydef/blob/master/README.md))
+* colorama (Only needed for the tests)
+
+
+Clone the repository
+
+```bash
+git clone https://github.com/krischer/head2cydef.git
+cd head2cydef
+```
+
+and then
+
+```bash
+pip install .
+or
+python setup.py install
+```
+
 ## Usage
 
 ```python
