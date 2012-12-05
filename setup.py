@@ -25,7 +25,10 @@ AUTHOR_EMAIL = "krischer@geophysik.uni-muenchen.de"
 URL = "None so far..."
 LICENSE = "GNU General Public License, version 3 (GPLv3)"
 KEYWORDS = ["cython"]
-INSTALL_REQUIRES = ["clang", "colorama"]
+# clang would be required here, but for some reason setuptools does not
+# recognize it although I have it installed.
+#INSTALL_REQUIRES = ["clang", "colorama"]
+INSTALL_REQUIRES = ["colorama"]
 
 
 def getVersion():
