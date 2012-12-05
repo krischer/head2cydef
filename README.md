@@ -1,4 +1,6 @@
-`head2cydef` translates C header files to corresponding Cython definition files
+# head2cydef - Autocreate Cython definition files
+
+**head2cydef** translates C header files to corresponding Cython definition files
 which are then used to call C libraries from Cython.
 
 It leverages the Python bindings of the [clang](http://clang.llvm.org/)
